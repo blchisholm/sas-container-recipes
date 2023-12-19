@@ -42,19 +42,20 @@ COPY sssd_mkhomedir_helper.sh /usr/local/bin/mkhomedir_helper.sh
 #
 
 RUN set -e; \
-    if [ "$PLATFORM" = "redhat" ]; then \rpm --rebuilddb && \
+    if [ "$PLATFORM" = "redhat" ]; then \
         echo; echo "####### Add sssd and supporting cast"; echo; \
-        yum install --assumeyes  authconfig sssd openldap-clients; \
+        dnf --repofrompath rockylinux8,https://dl.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os install --assumeyes --nogpgcheck authselect sssd openldap-clients; \
         cp --verbose ${SSSD_CONF} /etc/sssd/sssd.conf; \
         chmod --verbose 600 /etc/sssd/sssd.conf; \
         if [ -f sssd.cert ]; then cp --verbose sssd.cert /etc/ssl/certs/sssd; fi; \
-        /usr/sbin/authconfig --enablesssd \
-            --enablesssdauth \
-            --enablelocauthorize \
-            --enablesysnetauth \
-            --update; \
-        sed -i '/^account.*required.*pam_unix.so$/a account     required      pam_exec.so \/usr\/local\/bin\/mkhomedir_helper.sh' /etc/pam.d/password-auth; \
-        sed -i '/^session.*optional.*pam_sss.so$/a session     optional      pam_mkhomedir.so' /etc/pam.d/system-auth; \
+        /usr/sbin/authselect sssd --force; \
+#        /usr/sbin/authconfig --enablesssd \
+#            --enablesssdauth \
+#            --enablelocauthorize \
+#            --enablesysnetauth \
+#            --update; \
+#        sed -i '/^account.*required.*pam_unix.so$/a account     required      pam_exec.so \/usr\/local\/bin\/mkhomedir_helper.sh' /etc/pam.d/password-auth; \
+#        sed -i '/^session.*optional.*pam_sss.so$/a session     optional      pam_mkhomedir.so' /etc/pam.d/system-auth; \
         yum clean all; \
         rm --verbose --recursive --force /root/.cache /var/cache/yum; \
     elif [ "$PLATFORM" = "suse" ]; then \

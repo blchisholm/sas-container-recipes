@@ -27,9 +27,9 @@ FROM $BASE
 
 ARG PLATFORM=redhat
 ENV PLATFORM=$PLATFORM
-ARG ANSIBLE_VERSION=2.7
-ARG TINI_RPM_NAME=tini_0.18.0.rpm
-ARG TINI_URL=https://github.com/krallin/tini/releases/download/v0.18.0
+ARG ANSIBLE_VERSION=2.9
+ARG TINI_RPM_NAME=tini_0.19.0.rpm
+ARG TINI_URL=https://github.com/krallin/tini/releases/download/v0.19.0
 ARG SAS_RPM_REPO_URL=https://ses.sas.download/ses/
 
 USER root
@@ -49,11 +49,10 @@ ENTRYPOINT ["/usr/bin/tini", "--", "/opt/sas/viya/home/bin/entrypoint"]
 RUN set -e; \
     echo; echo "####### Go ahead and add the packages that the Ansible playbook will look for"; echo; \
     if [ "$PLATFORM" = "redhat" ]; then \
-        rpm --rebuilddb; \
-        yum install --assumeyes java-1.8.0-openjdk libselinux-python which; \
+        yum install --assumeyes java-1.8.0-openjdk hostname python3-libselinux which; \
         yum clean all; \
         rm --verbose --recursive --force /root/.cache /var/cache/yum; \
-        rm --verbose /etc/security/limits.d/20-nproc.conf; \
+        rm --verbose --force /etc/security/limits.d/20-nproc.conf; \
     elif [ "$PLATFORM" = "suse" ]; then \
         zypper --non-interactive install -y java-1_8_0-openjdk tar curl hostname iproute2 which gzip; \
         zypper clean --all; \
@@ -62,12 +61,22 @@ RUN set -e; \
     fi;
 
 #
+# numactl is a required dependency, but it isn't in the ubi repos, so get it from rockylinux
+#
+
+RUN set -e; \
+    if [ "$PLATFORM" = "redhat" ]; then \
+        dnf --repofrompath rockylinux8,https://dl.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os install --assumeyes --nogpgcheck numactl; \
+        yum clean all; \
+        rm --verbose --recursive --force /root/.cache /var/cache/yum; \
+    fi;
+
+#
 # Install tini to manage the processes
 #
 
 RUN set -e; \
     if [ "$PLATFORM" = "redhat" ]; then \
-        rpm --rebuilddb; \
         curl --silent --output ${TINI_RPM_NAME} --location ${TINI_URL}/${TINI_RPM_NAME}; \
         yum install --assumeyes ${TINI_RPM_NAME}; \
         rm --verbose ${TINI_RPM_NAME}; \
@@ -99,14 +108,13 @@ RUN set -e; \
 RUN set -e; \
     echo; echo "####### Run the Ansible playbook to create the main layer"; echo; \
     if [ "$PLATFORM" = "redhat" ]; then \
-        rpm --rebuilddb; \
         echo; echo "####### Add the packages to support running the Ansible playbook"; echo; \
-        yum install --assumeyes  https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm ; \
-        yum install --assumeyes python-setuptools python-devel openssl-devel; \
-        yum install --assumeyes python-pip gcc wget tree automake python-six; \
-    	pip install --upgrade pip==19.3 setuptools==44.0 ; \
-        pip install ansible==${ANSIBLE_VERSION}; \
-        yum install --assumeyes python iproute openssh-clients initscripts sudo; \
+        yum install --assumeyes  https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm ; \
+        yum install --assumeyes python3-setuptools openssl-devel; \
+        yum install --assumeyes python3-pip gcc wget automake python3-six; \
+        pip3 install --upgrade pip==21.3 setuptools==59.3.0 ; \
+        pip3 install ansible==${ANSIBLE_VERSION}; \
+        yum install --assumeyes python36 iproute openssh-clients initscripts sudo; \
     elif [ "$PLATFORM" = "suse" ]; then \
         #Ansible needs \
         zypper --non-interactive install -y python-setuptools python-pyOpenSSL python-devel; \
@@ -260,7 +268,7 @@ RUN set -e; \
     echo; echo "####### Create the Text Analytics languages layer"; echo; \
     pushd sas_viya_playbook ; \
     echo; echo "####### Run the playbook"; echo; \
-    ansible-playbook -i inventory_local.ini install-only.yml -vvv ; \
+    ansible-playbook -i inventory_local.ini install-only.yml -e '@vars_usermods.yml' -vvv ; \
     echo; echo "####### Stop the running services"; echo; \
     /etc/init.d/sas-viya-all-services stop; \
     popd; \
@@ -298,7 +306,7 @@ RUN set -e; \
     echo; echo "####### Create the layer for some of the bigger packages"; echo; \
     pushd sas_viya_playbook; \
     echo; echo "####### Run the playbook"; echo; \
-    ansible-playbook -i inventory_local.ini install-only.yml -vvv; \
+    ansible-playbook -i inventory_local.ini install-only.yml -e '@vars_usermods.yml' -vvv; \
     echo; echo "####### Stop the running services"; echo; \
     /etc/init.d/sas-viya-all-services stop; \
     popd; \
@@ -339,4 +347,3 @@ RUN chmod +x /opt/sas/viya/home/bin/replace_httpd_default_cert.sh
 
 COPY entrypoint /opt/sas/viya/home/bin/entrypoint
 RUN chmod +x /opt/sas/viya/home/bin/entrypoint
-
